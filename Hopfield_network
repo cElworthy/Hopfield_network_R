@@ -1,0 +1,224 @@
+###### Hopfield network
+# Hopfield networks work upon the synaptic connections being symmetric
+# i to j and j to i have the same weight. This allows us to make this 
+# simple model. Used here to 'store' images and find matching ones based 
+# on distortion of one or two pixels. 
+
+make_image = function(sparsity, size){
+  solid = size-sparsity
+  neurons = c(rep(1,solid), rep(-1, sparsity))
+  output = sample(neurons, size, replace=FALSE)
+  return(output)
+}
+# This simply generates a sequence to make an image later.
+# It makes a random sequence of 1s and -1s based on the size
+# of square you want and how sparse it is - meaning how many 
+# black 'pixels' there are, 1 being black and -1 being white
+
+
+draw = function(pattern){
+  pattern=matrix(pattern, nrow=sqrt(length(pattern)))
+  image(pattern, col=c("black", "white"), xaxt='n',yaxt='n')
+  box(which = "plot", lty = "solid")
+}
+# This 'draws' the pattern generated from the function above
+
+
+find_weights = function(pattern){
+  weights = matrix(ncol = length(pattern), nrow = length(pattern))
+  for (i in 1:length((pattern))){
+    for(j in 1:length((pattern))){
+      weights[i,j] = pattern[i]*pattern[j]
+    }
+  }
+  diag(weights)=0
+  #There is no connection between a node and itself
+  return(weights)
+}
+# This creates a weight matrix based on a pattern, 
+# obviously only producing 1 or -1 as weights
+
+
+final_weight = function(input){
+  M=matrix(0,ncol=length(input[[1]]),nrow=length(input[[1]]))
+  for(S in 1:length(input)){
+    M=find_weights(input[[S]])+M
+    #This combines weights of a series of sequences
+  }
+  return(M)
+}
+# Find weights of listed patterns
+
+
+update = function(weights, pattern, counts=5){
+  sign=c()
+  count=0
+  oldPattern = pattern
+  while(count<counts){
+    count=count+1 
+    #This just updates it 5 times, 5 was chosen arbitrarily
+    
+    for (i in 1:ncol(weights)){
+      temporary = 0
+      for(j in 1:length(pattern)){
+        temporary=sum(temporary, pattern[-j]*weights[i,-j],na.rm = TRUE)
+      }
+
+      if(temporary>=0){
+        sign[i]=1
+      }else{ sign[i]=-1 }
+      if(sign[i]!=pattern[i]){
+        pattern[i]=pattern[i]*-1
+      }
+    }
+  }
+  return(pattern=pattern)
+}
+# This function works by adding a new pattern and outputting 
+# the most similar pattern to it using the weights
+
+
+training = function(n, sparsity, size){
+  images=list(matrix(nrow=sqrt(size),ncol=sqrt(size)))
+  #This is convoluted because its easier for me to visualise a matrix
+  for (i in 1:n){
+    images[[i]]=(make_image(sparsity,size))
+  }
+  #This creates n number of images
+  
+  weights=final_weight(images)
+  return(list(weights=weights, images=images))
+  
+}
+# This function has input of n=how many patterns you want it to learn
+# sparsity which is a number denoting how many pixels you want black
+# and size which is just how large the image should be. 
+# It creates that many images then trains weights on them
+# Then returns the weights and images
+
+
+
+
+distort = function(pattern, rate){
+  random = sample(length(pattern), rate, replace = FALSE)
+  pattern[random] = pattern[random]*-1
+  return(pattern)
+}
+# The purpose of distort is to change a number of pixels from 
+# the original pattern, rate being the number of pixels to change
+
+
+
+
+test_storage = function(size, reps, storage=10, distortion=0){
+  sparsity = c(1:(size-1)) 
+  #This is so theres always at least 1 pixel/1 pixel left blank
+  #and tests every number of pixels possible
+
+  storage = storage 
+  #Storage is the number of sequences the network can 'remember'
+  
+  capacity = matrix(0,ncol=storage, nrow=length(sparsity))
+  #Capacity is to record the experiments
+  
+  for(i in 1:reps){
+    for (s in 1:length(sparsity)){
+      for(n in 1:storage){
+        trained = training(n=n,sparsity = sparsity[s], size=size)
+        weights = trained$weights
+        if(distortion==0){
+          pattern = trained$images[[1]]
+        }else{
+          pattern = distort(trained$images[[1]], rate = distortion)
+        }
+
+        newImage = update(weights=weights, pattern=pattern)
+        
+        if (identical(trained$images[[1]],newImage)){
+          capacity[s,n]= capacity[s,n]+1
+          #So this counts as a win if it recognises
+          #a pattern as itself
+        }
+      }
+    }
+  }
+  return(capacity)
+}
+# Test_storage is a function to test how many patterns the network
+# can stably 'remember' before breaking down. The way it does this
+# is by creating n patterns then training weights on them, then it
+# takes the first pattern and distorts it however much you want. 
+# Then it tries to update it, if the pattern isn't updated back to 
+# the original pattern then the network is not stable at this capacity
+# especially if there is no distortion. This win/lose is then
+# recorded in a matrix which can be put into a readable heatmap
+
+
+draw_storage_heatmap = function(size, reps, storage = 10, distortion = 0){
+  #This just makes a heatmap based on test_storage data
+  
+  par(mfrow=c(1,1), mar=c(5,5,2,2))
+  image(test_storage(size, reps, storage, distortion), 
+        col = heat.colors(reps+1), 
+        xlab = "Sparsity in number of pixels",
+        ylab = paste0("Number of patterns 'remembered' with \n", distortion, 
+                      " pixels distorted" ),
+        axes=F)
+  mtext(text=c(1:storage), side=2, line=0.4, 
+        at=seq(0,1,length.out = storage), las=1, cex=0.8)
+  mtext(text=c(1:(size-1)), side=1, line=0.4, 
+        at=seq(0,1,length.out = length(1:(size-1))), las=1, cex=0.8)
+}
+
+draw_storage_heatmap(size=25,reps=15,storage=10, distortion = 0)
+# So this snippet would test a network with 25 nodes (here as 5x5 pattern)
+# This would try to 'remember' 10 different patterns and it would repeat
+# 15 times, every time it got the test image correct it makes the heatmap
+# lighter. As you can see any number of pixels works with 2 patterns and
+# with roughly 50% of the pixels the network can remember the most. The
+# heatmap is obviously symmetrical because remembering a pattern with 24/25 
+# pixels is the same as remembering 1/25.
+
+
+
+visualising_distortion = function(size, n, sparsity, distortion, update_counts){
+  ex = training(n=n, sparsity=sparsity, size=size)
+  pattern = ex$images[[1]]
+  #draw(pattern)
+  par(mfrow=c(1,(update_counts+1)))
+  #draw(distorted)
+  stored_updates = list(matrix(nrow=sqrt(size),ncol=sqrt(size)))
+  stored_updates[[1]] = distort(pattern, distortion)
+  #The first matrix in stored_updates is the first distortion
+  for(count in 2:(update_counts+1)){
+    print(count)
+    stored_updates[[count]] = update(weights = ex$weights,
+                             pattern = stored_updates[[count-1]],
+                             counts = 1) 
+    #counts = 1 because I want to show the updates individually
+    
+    if(identical(stored_updates[[count]],pattern)){
+      break
+    }
+  }
+  return(list(original=pattern,distorted=stored_updates))
+}
+# visualising_distortion is just to show the process.
+# The function creates n patterns then one is picked and distorted
+# Then the distorted pattern is updated using the weights from
+# the original patterns and checked if it is identical
+
+test_100 = visualising_distortion(size = 100, 
+                                  n = 10, 
+                                  sparsity = 50, 
+                                  distortion = 5, 
+                                  update_counts = 10)
+
+
+draw(test_100$original)
+draw(test_100$distorted[[1]])
+draw(test_100$distorted[[2]])
+
+
+
+     
